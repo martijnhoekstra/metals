@@ -239,7 +239,7 @@ object ScalametaEnrichments {
           ) =>
         Symbol.Global(
           Symbol.Global(owner, Signature.Type(signature.name)),
-          param
+          Signature.Method(param.name, "()")
         )
     }
 
