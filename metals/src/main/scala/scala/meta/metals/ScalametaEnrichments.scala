@@ -17,6 +17,7 @@ import org.langmeta.io.AbsolutePath
 import org.langmeta.internal.semanticdb._
 import scala.meta.internal.semanticdb3.SymbolInformation.Kind
 import scala.meta.internal.semanticdb3.SymbolInformation.Property
+import scala.meta.metals.search.SymbolInformationsBySymbol
 
 // Extension methods for convenient reuse of data conversions between
 // scala.meta._ and language.types._
@@ -322,8 +323,53 @@ object ScalametaEnrichments {
     }
 
   }
+  implicit class XtensionSchemaRange(val r: semanticdb3.Range) {
+    def toLSP: l.Range = l.Range(
+      startLine = r.startLine,
+      startColumn = r.startCharacter,
+      endLine = r.endLine,
+      endColumn = r.endCharacter
+    )
+    def toLocation(uri: String): l.Location = {
+      l.Location(uri, toLSP)
+    }
+  }
   implicit class XtensionSchemaDocument(val document: semanticdb3.TextDocument)
       extends AnyVal {
+
+    def computeSymbolDataForLocalSymbol(
+        symbol: String
+    ): Option[i.SymbolData] = {
+      info(symbol).map { info =>
+        val uri = Uri(document.uri)
+        var definition: Option[Location] = None
+        val references = List.newBuilder[l.Range]
+        document.occurrences.foreach { o =>
+          if (o.symbol == symbol && o.range.isDefined) {
+            if (o.role.isDefinition) {
+              definition = Some(o.range.get.toLocation(document.uri))
+            } else if (o.role.isReference) {
+              references += o.range.get.toLSP
+            }
+          }
+        }
+        i.SymbolData(
+          symbol = symbol,
+          definition = definition,
+          references = Map(uri -> references.result()),
+          info = Some(info)
+        )
+      }
+    }
+
+    def info(symbol: String): Option[semanticdb3.SymbolInformation] = {
+      document.symbols match {
+        case s: SymbolInformationsBySymbol =>
+          s.lookupSymbol(symbol)
+        case _ =>
+          document.symbols.find(_.symbol == symbol)
+      }
+    }
 
     /** Returns scala.meta.Document from protobuf schema.Document */
     def toMetaDocument: m.Document =
@@ -332,7 +378,7 @@ object ScalametaEnrichments {
 
   implicit class XtensionSymbolInformation(
       val info: semanticdb3.SymbolInformation
-  ) {
+  ) extends AnyVal {
     import Property._
     def isOneOf(kind: Kind*): Boolean = {
       kind.contains(info.kind)
@@ -369,7 +415,8 @@ object ScalametaEnrichments {
         )
     }
   }
-  implicit class XtensionIntAsSymbolKind(val flags: Int) {
+
+  implicit class XtensionIntAsSymbolKind(val flags: Int) extends AnyVal {
     def hasOneOfFlags(flags: Long): Boolean =
       (this.flags & flags) != 0L
     def toSymbolKind: SymbolKind =
@@ -380,4 +427,5 @@ object ScalametaEnrichments {
       else
         SymbolKind.Module
   }
+
 }
