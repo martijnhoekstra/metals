@@ -141,11 +141,11 @@ object JavaMtagsTest extends BaseMtagsTest {
 
   test("index a few sources from the JDK") {
     val jdk = CompilerConfig.jdkSources.get
-    val DefaultFileSystem =
+    val DefaultFileSystem: java.nio.file.Path =
       Paths.get("java").resolve("io").resolve("DefaultFileSystem.java")
-    val db = Mtags.indexDatabase(jdk :: Nil, shouldIndex = { path =>
-      path.toNIO.endsWith(DefaultFileSystem)
-    })
+      val db = Mtags.indexDatabase(jdk :: Nil, shouldIndex = { path => 
+        path.toNIO.endsWith(DefaultFileSystem)
+      })
     val obtained = db
       .toDb(None)
       .syntax

@@ -126,8 +126,13 @@ object Mtags extends LazyLogging {
   def index(fragment: Fragment): TextDocument = {
     val uri = {
       // Need special handling because https://github.com/scalameta/scalameta/issues/1163
-      if (isZip(fragment.base.toNIO.getFileName.toString))
-        new URI(s"jar:${fragment.base.toURI.normalize()}!/${fragment.name}")
+      // and because windows fragment names contain backslashes which are not valid URI elements 
+      if (isZip(fragment.base.toNIO.getFileName.toString)){
+        val path = java.nio.file.Paths.get(fragment.name.toString)
+        val reconstructedname = (for (i <- 0 until path.getNameCount) yield path.getName(i)).mkString("/")
+        var uripath = s"jar:${fragment.base.toURI.normalize()}!/$reconstructedname"
+        new URI(uripath)
+      } 
       else fragment.uri
     }
     val contents = new String(FileIO.readAllBytes(uri), StandardCharsets.UTF_8)
