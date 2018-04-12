@@ -1,7 +1,7 @@
 package scala.meta.metals.sbtserver
 
 import java.io.IOException
-import java.net.URI
+import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import scala.meta.metals.ActiveJson
@@ -23,6 +23,7 @@ import org.langmeta.lsp.LanguageServer
 import org.langmeta.lsp.TextDocument
 import org.langmeta.lsp.Window
 import org.scalasbt.ipcsocket.UnixDomainSocket
+import org.scalasbt.ipcsocket.Win32NamedPipeSocket
 
 /**
  * A wrapper around a connection to an sbt server.
@@ -62,7 +63,7 @@ object SbtServer extends LazyLogging {
   def connect(cwd: AbsolutePath, services: Services)(
       implicit scheduler: Scheduler
   ): Task[Either[String, SbtServer]] = {
-    Task(SbtServer.openSocketConnection(cwd)).flatMap {
+    Task(SbtServer.openSbtConnection(cwd)).flatMap {
       case Left(err: MissingActiveJson) =>
         fail(err.getMessage)
       case Left(_: IOException) =>
@@ -110,19 +111,43 @@ object SbtServer extends LazyLogging {
         }
       }
 
+
   /**
-   * Returns path to project/target/active.json from the base directory of an sbt build.
+   * Open a socket connection with sbt server
    */
-  def activeJson(cwd: AbsolutePath): AbsolutePath =
-    cwd.resolve("project").resolve("target").resolve("active.json")
+  def openSbtConnection(cwd: AbsolutePath): Either[Throwable, Socket] = {
+    for {
+      active <- activeJson(cwd)
+      socket <- openSocket(active)
+    } yield socket
+  }
 
   /**
    * Establishes a unix domain socket connection with sbt server.
    */
-  def openSocketConnection(
-      cwd: AbsolutePath
-  ): Either[Throwable, UnixDomainSocket] = {
-    val active = activeJson(cwd)
+  def openSocket(active: ActiveJson): Either[Throwable, Socket] =
+    for {
+      uri <- active.toURI
+      socket <- uri.getScheme match {
+        case "local" if scala.util.Properties.isWin => 
+          val pipename = uri.getSchemeSpecificPart
+          logger.info(s"Connecting to sbt server pipe $pipename")
+          val pipepath = "\\\\.\\pipe\\" + pipename
+          Try(new Win32NamedPipeSocket(pipepath)).toEither
+        case "local" =>
+          logger.info(s"Connecting to sbt server socket ${uri.getPath}")
+          Try(new UnixDomainSocket(uri.getPath)).toEither
+        case unsupported =>
+          Left(new IllegalArgumentException(s"Unsupported scheme $unsupported"))
+      }
+    } yield socket
+   
+
+  /**
+   * Gets the connection URI from the active.json file
+   */
+  def activeJson(cwd: AbsolutePath): Either[Throwable, ActiveJson] = {
+    val active = cwd.resolve("project").resolve("target").resolve("active.json")
     for {
       bytes <- {
         if (Files.exists(active.toNIO)) Right(Files.readAllBytes(active.toNIO))
@@ -130,14 +155,6 @@ object SbtServer extends LazyLogging {
       }
       parsed <- parseByteBuffer(ByteBuffer.wrap(bytes))
       activeJson <- parsed.as[ActiveJson]
-      uri <- Try(URI.create(activeJson.uri)).toEither
-      socket <- uri.getScheme match {
-        case "local" =>
-          logger.info(s"Connecting to sbt server socket ${uri.getPath}")
-          Try(new UnixDomainSocket(uri.getPath)).toEither
-        case invalid =>
-          Left(new IllegalArgumentException(s"Unsupported scheme $invalid"))
-      }
-    } yield socket
+    } yield activeJson
   }
 }

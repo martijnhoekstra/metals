@@ -3,8 +3,12 @@ package scala.meta.metals
 import io.circe.Json
 import io.circe.generic.JsonCodec
 import org.langmeta.io.AbsolutePath
+import java.net.URI
+import scala.util.Try
 
-@JsonCodec case class ActiveJson(uri: String)
+@JsonCodec case class ActiveJson(uri: String, tokenfilePath: Option[String]) {
+   def toURI: Either[Throwable, URI] = Try(URI.create(uri)).toEither
+}
 
 @JsonCodec case class SettingParams(setting: String)
 @JsonCodec case class SettingResult(value: Json, contentType: Json)
