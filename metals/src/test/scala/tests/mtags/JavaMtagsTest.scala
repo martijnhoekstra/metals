@@ -141,35 +141,42 @@ object JavaMtagsTest extends BaseMtagsTest {
 
   test("index a few sources from the JDK") {
     val jdk = CompilerConfig.jdkSources.get
+    //cross platform shenanigans. 
+    val jdkpathstring = jdk.toString().replace("\\", "/").replace(" ", "%20")
+    val jdkreplacement = (if (scala.util.Properties.isWin) "" else "/") + "JAVA_HOME"
     val DefaultFileSystem: java.nio.file.Path =
-      Paths.get("java").resolve("io").resolve("DefaultFileSystem.java")
+      Paths.get("java").resolve("io").resolve("DeleteOnExitHook.java")
       val db = Mtags.indexDatabase(jdk :: Nil, shouldIndex = { path => 
         path.toNIO.endsWith(DefaultFileSystem)
       })
     val obtained = db
       .toDb(None)
       .syntax
-      .replace(jdk.toString(), "JAVA_HOME")
+      .replace(jdkpathstring, jdkreplacement)
       .replaceAll("-+", "------------------") // consistent across machines.
     val expected =
       """
-        |jar:file://JAVA_HOME!/java/io/DefaultFileSystem.java
+        |jar:file:///JAVA_HOME!/java/io/DeleteOnExitHook.java
         |------------------
         |Language:
         |Java
         |
         |Names:
-        |[219..223): java => java.
-        |[224..226): io => java.io.
-        |[260..277): DefaultFileSystem <= java.io.DefaultFileSystem#
-        |[387..400): getFileSystem <= java.io.DefaultFileSystem#getFileSystem.
+        |[224..228): java => java.
+        |[229..231): io => java.io.
+        |[482..498): DeleteOnExitHook <= java.io.DeleteOnExitHook#
+        |[542..547): files <= java.io.DeleteOnExitHook#files.
+        |[1336..1339): add <= java.io.DeleteOnExitHook#add.
+        |[1578..1586): runHooks <= java.io.DeleteOnExitHook#runHooks.
         |
         |Symbols:
         |java. => javadefined package java
         |java.io. => javadefined package io
-        |java.io.DefaultFileSystem# => javadefined class DefaultFileSystem
-        |java.io.DefaultFileSystem#getFileSystem. => javadefined method getFileSystem
-      """.stripMargin
+        |java.io.DeleteOnExitHook# => javadefined class DeleteOnExitHook
+        |java.io.DeleteOnExitHook#add. => javadefined method add
+        |java.io.DeleteOnExitHook#files. => javadefined field files
+        |java.io.DeleteOnExitHook#runHooks. => javadefined method runHooks""".stripMargin
+
     assertNoDiff(obtained, expected)
   }
 
